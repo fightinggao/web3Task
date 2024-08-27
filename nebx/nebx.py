@@ -14,7 +14,7 @@ logger.add(sys.stdout, colorize=True, format="<g>{time:HH:mm:ss:SSS}</g> | <leve
 
 
 class Twitter:
-    def __init__(self, auth_token):
+    def __init__(self, auth_token, proxy):
         self.auth_token = auth_token
         bearer_token = "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
         defaulf_headers = {
@@ -25,7 +25,7 @@ class Twitter:
             "authorization": bearer_token,
         }
         defaulf_cookies = {"auth_token": auth_token}
-        self.Twitter = AsyncSession(headers=defaulf_headers, cookies=defaulf_cookies, timeout=120)
+        self.Twitter = AsyncSession(headers=defaulf_headers, cookies=defaulf_cookies, timeout=120, proxy=proxy)
         self.auth_code = None
 
     async def get_auth_code(self, client_id, state, code_challenge):
@@ -113,7 +113,7 @@ class Nebx:
         session = ''.join(random.choices(string.digits + string.ascii_letters, k=10))
         nstproxy = f"http://{nstproxy_Channel}-residential-country_ANY-r_5m-s_{session}:{nstproxy_Password}@gw-us.nstproxy.com:24125"
         self.client = AsyncSession(timeout=120, headers=headers, impersonate="chrome120", proxy=nstproxy)
-        self.Twitter = Twitter(auth_token)
+        self.Twitter = Twitter(auth_token, proxy=nstproxy)
         self.auth_token, self.inviteCode = auth_token, inviteCode
 
     def encode(self, info):
