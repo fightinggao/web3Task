@@ -8,9 +8,22 @@ from loguru import logger
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 import binascii
+from tenacity import retry, wait_fixed, stop_after_attempt, retry_if_result
 
 logger.remove()
 logger.add(sys.stdout, colorize=True, format="<g>{time:HH:mm:ss:SSS}</g> | <level>{message}</level>")
+
+
+def returnFalse(_):
+    return False
+
+
+retry_pamars = {
+    'wait': wait_fixed(5),
+    'stop': stop_after_attempt(7),
+    'retry': retry_if_result(lambda x: x is False),
+    'retry_error_callback': returnFalse
+}
 
 
 class Twitter:
@@ -111,10 +124,11 @@ class Nebx:
             "Referer": "https://nebx.io/"
         }
         session = ''.join(random.choices(string.digits + string.ascii_letters, k=10))
-        nstproxy = f"http://{nstproxy_Channel}-residential-country_ANY-r_5m-s_{session}:{nstproxy_Password}@gw-us.nstproxy.com:24125"
+        nstproxy = f"http://{nstproxy_Channel}-residential-country_ANY-r_0m-s_{session}:{nstproxy_Password}@gate.nstproxy.io:24125"
         self.client = AsyncSession(timeout=120, headers=headers, impersonate="chrome120", proxy=nstproxy)
         self.Twitter = Twitter(auth_token, proxy=nstproxy)
         self.auth_token, self.inviteCode = auth_token, inviteCode
+        self.uuid, self.clientId, self.state = None, None, None
 
     def encode(self, info):
         encodeKey = self.client.headers.get('Authorization').split('-')[0].replace('Bearer ', '')[:16]
@@ -131,6 +145,7 @@ class Nebx:
         decrypted = unpad(cipher.decrypt(binascii.unhexlify(info)), AES.block_size)
         return decrypted.decode('utf-8')
 
+    @retry(**retry_pamars)
     async def get_auth_code(self):
         try:
             uuid = int(time.time() * 1000)
@@ -144,24 +159,26 @@ class Nebx:
                 code_challenge = resdata['url'].split('code_challenge=')[1].split('&')[0]
                 if await self.Twitter.twitter_authorize(clientId, state, code_challenge):
                     logger.success(f'{self.auth_token}  推特授权成功')
-                    return await self.login(uuid, clientId, state)
+                    self.uuid, self.clientId, self.state = uuid, clientId, state
+                    return True
                 else:
                     logger.error(f'{self.auth_token}  推特授权失败')
                     return False
-            logger.error(f'{self.auth_token}  推特授权失败===网页返回错误{res.status_code}')
+            logger.error(f'{self.auth_token}  获取推特授权链接失败===网页返回错误{res.status_code}')
             return False
         except Exception as e:
-            logger.error(f'{self.auth_token}  推特授权异常：{e}')
+            logger.error(f'{self.auth_token}  获取推特授权链接异常：{e}')
             return False
 
-    async def login(self, uuid, clientId, state):
+    @retry(**retry_pamars)
+    async def login(self):
         try:
             info = {
-                "state": state,
+                "state": self.state,
                 "code": self.Twitter.auth_code,
-                "clientId": clientId,
+                "clientId": self.clientId,
                 "inviteCode": self.inviteCode,
-                "uuid": uuid
+                "uuid": self.uuid
             }
             info = json.dumps(info, separators=(',', ':'))
             res = await self.client.post('https://apiv1.nebx.io/login/sign_in', data=f'sign={self.encode(info)}')
@@ -169,13 +186,14 @@ class Nebx:
                 resdata = json.loads(self.decode(res.text))
                 if 'token' in resdata:
                     self.client.headers.update({"Authorization": f"Bearer {resdata['token']}"})
-                    return await self.check()
+                    return True
             logger.error(f'{self.auth_token}  登录失败===网页返回错误{res.status_code}')
             return False
         except Exception as e:
             logger.error(f'{self.auth_token}  登录异常：{e}')
             return False
 
+    @retry(**retry_pamars)
     async def check(self):
         try:
             uuid = int(time.time() * 1000)
@@ -186,20 +204,22 @@ class Nebx:
                 resdata = json.loads(self.decode(res.text))
                 score = resdata['score']
                 logger.success(f'{self.auth_token}  积分{score}')
-                return await self.checkA()
+                return True
             logger.error(f'{self.auth_token}  检测积分失败===网页返回错误{res.status_code}')
             return False
         except Exception as e:
             logger.error(f'{self.auth_token}  登检测积分异常：{e}')
             return False
 
-    async def checkA(self):
+    @retry(**retry_pamars)
+    async def receive(self):
         try:
             uuid = int(time.time() * 1000)
             info = {"uuid": uuid}
             info = json.dumps(info, separators=(',', ':'))
             res = await self.client.post('https://apiv1.nebx.io/user/check_award', data=f'sign={self.encode(info)}')
             if res.status_code == 200:
+                logger.success(f'{self.auth_token}  领取积分成功')
                 return True
             logger.error(f'{self.auth_token}  领取积分失败===网页返回错误{res.status_code}')
             return False
@@ -210,9 +230,9 @@ class Nebx:
 
 async def do(semaphore, inviteCode, auth_token, nstproxy_Channel, nstproxy_Password):
     async with semaphore:
-        for _ in range(3):
-            if await Nebx(auth_token, inviteCode, nstproxy_Channel, nstproxy_Password).get_auth_code():
-                break
+        nebx = Nebx(auth_token, inviteCode, nstproxy_Channel, nstproxy_Password)
+        if await nebx.get_auth_code() and await nebx.login() and await nebx.check() and await nebx.receive():
+            return True
 
 
 async def main(filePath, tread, inviteCode, nstproxy_Channel, nstproxy_Password):
@@ -243,5 +263,3 @@ if __name__ == '__main__':
     print('hdd.cm 推特低至2毛')
     while True:
         menu()
-
-
