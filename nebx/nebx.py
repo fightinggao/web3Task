@@ -244,9 +244,9 @@ async def main(filePath, tread, inviteCode, nstproxy_Channel, nstproxy_Password)
 
 def menu():
     print('账户文件格式：auth_token一行一个放txt')
-    _filePath = input("请输入账户文件路径：").strip()
-    _tread = input("请输入并发数：").strip()
-    _inviteCode = input("请输入大号邀请码：").strip()
+    _filePath = input("请输入账户文件路径：C:\Users\Gaobo\Desktop\auto.txt").strip()
+    _tread = input("请输入并发数：10").strip()
+    _inviteCode = input("请输入大号邀请码：45613646").strip()
     _nstproxy_Channel = input('请输入nstproxy_通道ID:').strip()
     _nstproxy_Password = input('请输入nstproxy_密码:').strip()
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
